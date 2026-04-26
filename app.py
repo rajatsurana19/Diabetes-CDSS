@@ -1,63 +1,138 @@
-from flask import Flask, render_template, request
+import streamlit as st
 import numpy as np
 import pandas as pd
 import pickle
-
-import matplotlib
-matplotlib.use("Agg")  # prevents GUI crash in Flask
-
 import matplotlib.pyplot as plt
-import io
-import base64
 
-app = Flask(__name__)
+st.set_page_config(
+    page_title="CDSS - Diabetes Prediction",
+    layout="wide"
+)
 
-# Load model and scaler
 model = pickle.load(open("model.pkl", "rb"))
 scaler = pickle.load(open("scaler.pkl", "rb"))
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+
+st.markdown("""
+<style>
+
+/* background */
+.stApp {
+    background-color: #f4fbf6;
+}
+
+/* top bar */
+.topbar {
+    background: #a5d6a7;
+    padding: 15px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.logo {
+    background: #1b5e20;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: bold;
+    margin-right: 15px;
+}
+
+.title {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1b5e20;
+}
+
+/* card style */
+.card {
+    background: white;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+}
+
+/* inputs spacing */
+input {
+    border-radius: 6px !important;
+}
+
+/* button */
+.stButton > button {
+    width: 100%;
+    background-color: #66bb6a;
+    color: white;
+    font-weight: bold;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.stButton > button:hover {
+    background-color: #43a047;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 
-@app.route("/predict", methods=["POST"])
-def predict():
-    try:
-        # ---------------- INPUT FROM FORM ----------------
-        preg = float(request.form["preg"])
-        glucose = float(request.form["glucose"])
-        bp = float(request.form["bp"])
-        skin = float(request.form["skin"])
-        insulin = float(request.form["insulin"])
-        bmi = float(request.form["bmi"])
-        dpf = float(request.form["dpf"])
-        age = float(request.form["age"])
+st.markdown("""
+<div class="topbar">
+    <div class="logo">CDSS</div>
+    <div class="title">Clinical Decision Support System</div>
+</div>
+""", unsafe_allow_html=True)
 
-        # ---------------- FIX: FEATURE NAMES ISSUE ----------------
-        input_data = pd.DataFrame([[
-            preg, glucose, bp, skin, insulin, bmi, dpf, age
-        ]], columns=[
-            "Pregnancies",
-            "Glucose",
-            "BloodPressure",
-            "SkinThickness",
-            "Insulin",
-            "BMI",
-            "DiabetesPedigreeFunction",
-            "Age"
-        ])
+left, right = st.columns([1, 1])
 
-        # ---------------- SCALE INPUT ----------------
+with left:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("Patient Data Entry")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        preg = st.number_input("Pregnancies", value=0.0)
+        bp = st.number_input("Blood Pressure", value=0.0)
+        insulin = st.number_input("Insulin", value=0.0)
+        dpf = st.number_input("Diabetes Pedigree", value=0.0)
+
+    with col2:
+        glucose = st.number_input("Glucose", value=0.0)
+        skin = st.number_input("Skin Thickness", value=0.0)
+        bmi = st.number_input("BMI", value=0.0)
+        age = st.number_input("Age", value=0.0)
+
+    submit = st.button("Run Diagnosis")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with right:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("Analysis Output")
+
+    if submit:
+
+        input_data = pd.DataFrame([[preg, glucose, bp, skin, insulin, bmi, dpf, age]],
+            columns=[
+                "Pregnancies",
+                "Glucose",
+                "BloodPressure",
+                "SkinThickness",
+                "Insulin",
+                "BMI",
+                "DiabetesPedigreeFunction",
+                "Age"
+            ])
+
         input_scaled = scaler.transform(input_data)
 
-        # ---------------- PREDICTION ----------------
         prediction = model.predict(input_scaled)[0]
         probability = model.predict_proba(input_scaled)[0]
 
         result = "Diabetic" if prediction == 1 else "Not Diabetic"
 
-        # ---------------- RISK LEVEL ----------------
         if probability[1] > 0.7:
             risk = "High Risk"
         elif probability[1] > 0.4:
@@ -65,7 +140,13 @@ def predict():
         else:
             risk = "Low Risk"
 
-        # ---------------- GRAPH GENERATION ----------------
+        st.markdown(f"### Diagnosis: **{result}**")
+        st.write(f"**Risk Level:** {risk}")
+
+        st.write("### Probability Scores")
+        st.write(f"- Non-Diabetic: {round(probability[0], 2)}")
+        st.write(f"- Diabetic: {round(probability[1], 2)}")
+
         fig, ax = plt.subplots()
 
         ax.bar(
@@ -81,32 +162,9 @@ def predict():
         for i, v in enumerate(probability):
             ax.text(i, v + 0.02, f"{v:.2f}", ha='center')
 
-        # Convert plot to image
-        img = io.BytesIO()
-        plt.savefig(img, format="png", bbox_inches='tight')
-        img.seek(0)
-        plot_url = base64.b64encode(img.getvalue()).decode()
-        plt.close()
+        st.pyplot(fig)
 
-        # ---------------- RETURN RESULT ----------------
-        return render_template(
-            "index.html",
-            prediction_text=result,
-            risk_level=risk,
-            prob_non=round(probability[0], 2),
-            prob_diab=round(probability[1], 2),
-            plot_url=plot_url
-        )
+    else:
+        st.write("Enter patient data to generate prediction.")
 
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-
-# Optional: fix favicon 404 (safe)
-@app.route("/favicon.ico")
-def favicon():
-    return "", 204
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
+    st.markdown('</div>', unsafe_allow_html=True)

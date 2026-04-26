@@ -7,7 +7,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 
-# Load dataset
 
 data = pd.read_csv("diabetes.csv")
 
